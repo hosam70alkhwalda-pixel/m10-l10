@@ -7,6 +7,18 @@ calls.
 from .w9b_mapper.mapper import map_question
 from .w9b_mapper.errors import UnsupportedQueryError  # re-export
 
+# Fallback pattern list surfaced in the 422 detail body when the raised
+# UnsupportedQueryError instance does not itself carry a
+# `supported_patterns` (or `patterns`) attribute. Keep this in sync with
+# the shapes documented in the W9B mapper's reading/spec.
+SUPPORTED_PATTERNS = [
+    "Find recipes by ingredient",
+    "Find recipes by cuisine",
+    "Find recipes by technique",
+    "Find ingredients used in a recipe",
+    "Find techniques used in a recipe",
+]
+
 
 def wrap_kg_query(question: str):
     """Map a natural-language question to (cypher, params).
@@ -19,5 +31,4 @@ def wrap_kg_query(question: str):
         UnsupportedQueryError — if the question does not match any
         supported pattern. The path operation converts this to 422.
     """
-    # TODO: call `map_question(question)` and return its (cypher, params).
-    raise NotImplementedError
+    return map_question(question)
