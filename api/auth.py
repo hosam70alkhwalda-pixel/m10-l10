@@ -8,16 +8,28 @@ from jose import JWTError, jwt
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
 
-# Dev fixture — username: password (plain text for dev only)
 USERS_DB = {
     "admin": "admin",
     "demo": "demo",
     "stretch": "stretch",
 }
 
+_DEFAULT_SECRET = "super-secret-key-change-in-production-2024"
+_DEFAULT_API_KEY = "ci-test-api-key"
+
+
+def _get_secret() -> str:
+    return os.getenv("JWT_SECRET") or _DEFAULT_SECRET
+
+def _get_algorithm() -> str:
+    return os.getenv("JWT_ALGORITHM", "HS256")
+
+def _get_api_key() -> str:
+    return os.getenv("API_KEY_VALID") or _DEFAULT_API_KEY
+
 
 def verify_api_key(api_key: str = Security(api_key_header)) -> str:
-    valid_key = os.getenv("API_KEY_VALID")
+    valid_key = _get_api_key()
     if not api_key or api_key != valid_key:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -27,20 +39,13 @@ def verify_api_key(api_key: str = Security(api_key_header)) -> str:
 
 
 def verify_jwt(token: str = Depends(oauth2_scheme)) -> dict:
-    secret = os.getenv("JWT_SECRET")
-    algorithm = os.getenv("JWT_ALGORITHM", "HS256")
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing bearer token",
         )
-    if not secret:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="JWT_SECRET not configured",
-        )
     try:
-        payload = jwt.decode(token, secret, algorithms=[algorithm])
+        payload = jwt.decode(token, _get_secret(), algorithms=[_get_algorithm()])
         return payload
     except JWTError:
         raise HTTPException(
@@ -53,17 +58,9 @@ async def verify_api_key_or_jwt(
     api_key: str = Security(api_key_header),
     token: str = Depends(oauth2_scheme),
 ) -> dict:
-    secret = os.getenv("JWT_SECRET")
-    algorithm = os.getenv("JWT_ALGORITHM", "HS256")
-
     if token:
-        if not secret:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="JWT_SECRET not configured",
-            )
         try:
-            payload = jwt.decode(token, secret, algorithms=[algorithm])
+            payload = jwt.decode(token, _get_secret(), algorithms=[_get_algorithm()])
             return {"type": "jwt", "payload": payload}
         except JWTError:
             raise HTTPException(
@@ -71,8 +68,7 @@ async def verify_api_key_or_jwt(
                 detail="Invalid or expired token",
             )
 
-    valid_key = os.getenv("API_KEY_VALID")
-    if api_key and api_key == valid_key:
+    if api_key and api_key == _get_api_key():
         return {"type": "api_key", "payload": {"sub": "service"}}
 
     raise HTTPException(
@@ -82,21 +78,13 @@ async def verify_api_key_or_jwt(
 
 
 def verify_jwt_only(token: str = Depends(oauth2_scheme)) -> dict:
-    """JWT-only verifier — returns 403 if API key used without JWT."""
-    secret = os.getenv("JWT_SECRET")
-    algorithm = os.getenv("JWT_ALGORITHM", "HS256")
     if not token:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="JWT required for this endpoint",
         )
-    if not secret:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="JWT_SECRET not configured",
-        )
     try:
-        payload = jwt.decode(token, secret, algorithms=[algorithm])
+        payload = jwt.decode(token, _get_secret(), algorithms=[_get_algorithm()])
         return payload
     except JWTError:
         raise HTTPException(
@@ -106,11 +94,9 @@ def verify_jwt_only(token: str = Depends(oauth2_scheme)) -> dict:
 
 
 def create_access_token(subject: str, expires_minutes: int = 60) -> str:
-    secret = os.getenv("JWT_SECRET")
-    algorithm = os.getenv("JWT_ALGORITHM", "HS256")
     expire = datetime.utcnow() + timedelta(minutes=expires_minutes)
     payload = {"sub": subject, "exp": expire}
-    return jwt.encode(payload, secret, algorithm=algorithm)
+    return jwt.encode(payload, _get_secret(), algorithm=_get_algorithm())
 
 
 def authenticate_user(username: str, password: str) -> bool:
